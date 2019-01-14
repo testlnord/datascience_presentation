@@ -1,0 +1,285 @@
+---
+title: "Data Science в России и мире"
+author: "Калакуцкий Аркадий<br/>JetBrains"
+output: 
+  slidy_presentation:
+    smart: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+load("data.clean.rda")
+library(readr)
+library(dplyr)
+library(ggplot2)
+
+data.clean.rus <- read_csv("ds_rus_clean_data.csv", col_types = cols(
+  .default = col_character(),
+  `На каком курсе Вы учитесь:` = col_integer()
+))
+data.clean.world <- data.clean %>% filter(`For you, data analysis is...?` != "I'm not involved in data analysis")
+```
+
+
+## Опросы
+
+- Все, что мы хотели узнать о Data Science в России, но боялись спросить  
+Декабрь 2017 
+
+- Data Science Worldwide  
+Апрель - Май 2018
+
+## Data Science в России
+
+- 385 ответов
+- Каналы: ODS, R user group, компании, реклама
+- 25 респондентов из SPB R User Group
+
+## Data Science Worldwide
+
+- По 400 ответа из каждого региона
+- Регионы: США, Европа, Китай, Япония
+- Каналы: реклама в adwords и twitter
+
+
+## Чем занимаются
+
+
+```{r}
+ 
+pro.activities <- data.clean.world %>% 
+  filter(`For you, data analysis is...?` %in% c("Your primary professional activity", "A secondary/additional activity that you perform as part of your job")) %>% 
+  select(ends_with(":Which of the following are you involved in?")) %>% 
+  tidyr::gather(activity, is.involved) %>% group_by(activity) %>% 
+  summarise(count=mean(!is.na(is.involved))) %>% ungroup() %>% 
+  mutate(activity = stringr::str_replace(activity, ":Which of the following are you involved in.", ""))
+          
+
+hob.activities <- data.clean.world %>% 
+  filter(!(`For you, data analysis is...?` %in% c("Your primary professional activity", "A secondary/additional activity that you perform as part of your job"))) %>% 
+  select(ends_with(":Which of the following are area(s) of interest to you?")) %>% 
+  tidyr::gather(activity, is.involved) %>% group_by(activity) %>% 
+  summarise(count=mean(!is.na(is.involved))) %>% ungroup() %>% 
+  mutate(activity = stringr::str_replace(activity, ":Which of the following are area.s. of interest to you.", ""))
+
+activities <- inner_join(pro.activities, hob.activities, by=c('activity')) %>% filter(activity != "Other ... Write In:") %>% setNames(c("activity", "Professionals", "Hobbyists")) %>% tidyr::gather(type, share, - activity)
+
+ggplot(activities, aes(reorder(activity, share), share, fill= type, group=type)) + geom_bar(stat='identity', position = "dodge") +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', axis.title.x=element_blank(),axis.text.y = element_text(size=15), axis.title.y=element_blank(), legend.title = element_blank()) + coord_flip() 
+```
+
+## Языки программирования
+
+```{r}
+langs <- data.clean.world %>% 
+  select(ends_with(":What programming language(s) do you regularly use for data analysis, if any?")) %>% 
+  tidyr::gather(lang, is.use) %>% group_by(lang) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+  mutate(lang = stringr::str_replace(lang, ":.*", "")) %>% filter(lang != "Other ... Write In")
+
+ggplot(langs, aes(reorder(lang, share), share)) + geom_bar(stat='identity', position = "dodge") +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', axis.title.x=element_blank(), axis.text.y = element_text(size=15), axis.title.y=element_blank(), legend.title = element_blank()) + coord_flip() 
+```
+
+
+## Зависимость языка от опыта
+```{r}
+langs <- data.clean.world %>% 
+  select(ends_with(":What programming language(s) do you regularly use for data analysis, if any?"), `How long have you been involved in data analysis?`, `How long have you been working in data analysis?`) %>%
+  mutate(experience = if_else(is.na(`How long have you been working in data analysis?`), `How long have you been involved in data analysis?`, `How long have you been working in data analysis?`)) %>% 
+  select(-`How long have you been working in data analysis?`, -`How long have you been involved in data analysis?`) %>% 
+
+  tidyr::gather(lang, is.use, -experience) %>% group_by(lang, experience) %>% summarise(count.users = sum(!is.na(is.use)), count.all = n()) %>% ungroup() %>% 
+  group_by(experience) %>% mutate(share.users  = count.users / count.all) %>% ungroup() %>% 
+  mutate(lang = stringr::str_replace(lang, ":.*", "")) #%>% filter(lang != "Other ... Write In") 
+
+ggplot(langs %>% filter(!is.na(experience)) %>% filter(lang %in% c("R", "Python")), 
+       aes(experience, share.users, fill=lang)) + geom_bar(stat='identity', position="dodge") +
+  scale_y_continuous(labels = scales::percent, limits=c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.y = element_text(size=15),legend.title = element_blank()) + scale_x_discrete(limits = rev(levels(langs$experience))) + coord_flip() 
+```
+
+
+## Какой язык будет наиболее востребованным через 5 лет?
+
+- Python
+- R
+- Что-то еще?
+
+## Какой язык будет наиболее востребованным через 5 лет?
+
+```{r}
+future.langs <- data.clean.world$`In your opinion, what programming language will be most used for data analysis in the next 5 years?` %>% table %>% magrittr::divide_by(sum(!is.na(data.clean.world$`In your opinion, what programming language will be most used for data analysis in the next 5 years?`))) %>% as.data.frame() %>% setNames(c('lang', 'share')) %>% 
+  filter(lang != "None", lang != "Other – Write In:")
+
+ggplot(future.langs, aes(reorder(lang, share), share)) + geom_bar(stat='identity', position = "dodge") +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', axis.title.x=element_blank(), axis.title.y=element_blank(),axis.text.y = element_text(size=15), legend.title = element_blank()) + coord_flip() 
+
+future.langs.R  <- data.clean.world$`In your opinion, what programming language will be most used for data analysis in the next 5 years?`[!is.na(data.clean.world$`R:What programming language(s) do you regularly use for data analysis, if any?`)] %>% table %>% magrittr::divide_by(sum(!is.na(data.clean.world$`R:What programming language(s) do you regularly use for data analysis, if any?`))) %>% as.data.frame() %>% setNames(c('lang', 'share')) %>% 
+  filter(lang != "None", lang != "Other – Write In:")
+```
+
+## R библиотеки
+
+```{r}
+rlibs <- data.clean.world %>% filter(!is.na(`R:What programming language(s) do you regularly use for data analysis, if any?`)) %>% 
+  select(ends_with(":What data analysis and/or data visualization libraries do you use with R, if any?")) %>% 
+  tidyr::gather(lib, is.use) %>% group_by(lib) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+  mutate(lib = stringr::str_replace(lib, ":.*", "")) %>% filter(lib != "Other ... Write In") %>% top_n(10, share)
+
+ggplot(rlibs, aes(reorder(lib, share), share)) + geom_bar(stat='identity', position = "dodge") +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', 
+        axis.title.x=element_blank(), 
+        axis.title.y=element_blank(), axis.text.y = element_text(size=15), legend.title = element_blank()) + coord_flip() 
+
+```
+
+
+
+## Визуальные средства для анализа данных
+```{r}
+other_countries = c("Brazil", "Jordan", "India", "Russia", "Kenya", "Peru", "Belarus", "Honduras","Australia", "Uruguay", "Georgia","Ethiopia", "Hong Kong", "Fiji", "Nepal", "Philippines", "Montenegro","Mexico","Vietnam", "Pakistan", "Taiwan", "Austria", "Bolivia", "Bangladesh", "South Africa", "Chile", "South Korea", "Antigua and Barbuda","Armenia", "Afghanistan", "Lebanon", "Iraq", "Mauritania", "Azerbaijan",
+"Uganda", "Tanzania", "Myanmar", "Sri Lanka")
+europe_countries = c("France", "Switzerland", "Germany", "Poland", "Turkey", "Ukraine", 
+                     "Portugal", "Czech Republic", "Spain", "Netherlands", "Italy", 
+                     "Greece", "Argentina", "Sweden", "Belgium", "Romania", "Hungary",  
+                     "Estonia", "Denmark", "Canada",  "Lithuania", "Norway", "Andorra", 
+                     "Slovenia", "Indonesia", "Croatia", "Cyprus", "Iceland", "Serbia", 
+                     "Macedonia", "Ireland")
+
+
+survey.designs.by.ctr <- list(
+  'США' = subset(data.clean.world, `What country do you live in?` == 'United States'),
+  'Япония' = subset(data.clean.world, `What country do you live in?` == 'Japan'),
+  'Китай' = subset(data.clean.world, `What country do you live in?` == 'China'),
+  'Европа' = subset(data.clean.world, `What country do you live in?` %in% europe_countries)
+)
+
+
+```
+
+```{r}
+world_tools <- lapply(survey.designs.by.ctr, function(df){ 
+  df %>% select(ends_with(":Which..tool(s) do you use for data analysis, if any?"))  %>% 
+    tidyr::gather(lib, is.use) %>% group_by(lib) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+    mutate(lib = stringr::str_replace(lib, ":.*", "")) %>% filter(lib != "Other ... Write In") %>% 
+    mutate(lib = case_when(
+      lib == "None" ~ "Не использую",
+      TRUE ~ lib
+    ))
+  })
+world_tools <- c(world_tools,
+list("Россия" = 
+       data.clean.rus %>% 
+       select(ends_with(":Какие визуальные средства для анализа данных Вы используете?")) %>% 
+       tidyr::gather(lib, is.use) %>% group_by(lib) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+       mutate(lib = stringr::str_replace(lib, ":.*", "")) %>% filter(lib != "Другое — впишите"))
+)
+ggplot(Reduce(rbind, lapply(names(world_tools), function(n){
+  tools <- world_tools[[n]]
+  tools$ctr <- n
+  tools
+})), aes(lib, share, fill=ctr, group=ctr)) + geom_bar(stat="identity", position = "dodge") + scale_y_continuous(labels = scales::percent, limits = c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', 
+        axis.title.x=element_blank(), 
+        axis.title.y=element_blank(), axis.text.y = element_text(size=15), legend.title = element_blank()) + coord_flip() 
+```
+
+## Cтатистические пакеты для анализа/визуализации данных
+
+```{r}
+world_tools <- lapply(survey.designs.by.ctr, function(df){ 
+  df %>% select(ends_with(":Which statistics package(s) do you use to analyze and visualize..data, if any?"))  %>% 
+    tidyr::gather(lib, is.use) %>% group_by(lib) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+    mutate(lib = stringr::str_replace(lib, ":.*", "")) %>% filter(lib != "Other ... Write In") %>% 
+    mutate(lib = case_when(
+      lib == "None" ~ "Не использую",
+      lib == "Spreadsheet editor (Microsoft Excel, OpenOffice Calc, Google Sheets, etc.)" ~ "Табличные редакторы",
+      TRUE ~ lib
+    ))
+  })
+world_tools <- c(world_tools,
+list("Россия" = 
+       data.clean.rus %>% 
+       select(ends_with(":Какие статистические пакеты для анализа/визуализации данных Вы используете?")) %>% 
+       tidyr::gather(lib, is.use) %>% group_by(lib) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+       mutate(lib = stringr::str_replace(lib, ":.*", "")) %>% filter(lib != "Другое — впишите") %>% 
+       mutate(lib = if_else(lib == "Табличные редакторы (Microsoft Excel, OpenOffice Calc, Google Sheets и пр.)", 
+                            "Табличные редакторы", lib)))
+)
+ggplot(Reduce(rbind, lapply(names(world_tools), function(n){
+  tools <- world_tools[[n]]
+  tools$ctr <- n
+  tools
+})), aes(lib, share, fill=ctr, group=ctr)) + geom_bar(stat="identity", position = "dodge") + scale_y_continuous(labels = scales::percent, limits = c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', 
+        axis.title.x=element_blank(), 
+        axis.title.y=element_blank(), axis.text.y = element_text(size=15), legend.title = element_blank()) + coord_flip() 
+```
+
+## Операционная система
+
+```{r}
+world_tools <- lapply(survey.designs.by.ctr, function(df){ 
+  df %>% select(ends_with(":What operating system(s) do you use as your work environment for data analysis?"))  %>% 
+    tidyr::gather(lib, is.use) %>% group_by(lib) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+    mutate(lib = stringr::str_replace(lib, ":.*", "")) %>% filter(lib != "Other ... Write In") %>% 
+    mutate(lib = case_when(
+      lib == "None" ~ "Не использую",
+      lib == "Spreadsheet editor (Microsoft Excel, OpenOffice Calc, Google Sheets, etc.)" ~ "Табличные редакторы",
+      TRUE ~ lib
+    ))
+  })
+world_tools <- c(world_tools,
+list("Россия" = 
+       data.clean.rus %>% 
+       select(ends_with(":Какую операционную систему (системы) Вы используете в качестве рабочего окружения, когда занимаетесь анализом данных?")) %>% 
+       tidyr::gather(lib, is.use) %>% group_by(lib) %>% summarise(share = mean(!is.na(is.use))) %>% ungroup() %>% 
+       mutate(lib = stringr::str_replace(lib, ":.*", "")) %>% filter(lib != "Другое — впишите") %>% 
+       mutate(lib = if_else(lib == "Табличные редакторы (Microsoft Excel, OpenOffice Calc, Google Sheets и пр.)", 
+                            "Табличные редакторы", lib)))
+)
+ggplot(Reduce(rbind, lapply(names(world_tools), function(n){
+  tools <- world_tools[[n]]
+  tools$ctr <- n
+  tools
+})), aes(lib, share, fill=ctr, group=ctr)) + geom_bar(stat="identity", position = "dodge") + scale_y_continuous(labels = scales::percent, limits = c(0,1)) + theme_bw() + 
+  theme(legend.position = 'bottom', 
+        axis.title.x=element_blank(), 
+        axis.title.y=element_blank(), axis.text.y = element_text(size=15), legend.title = element_blank()) + coord_flip() 
+```
+
+
+## Экспертиза менеджера
+
+```{r}
+
+manager <- data.clean.world %>% 
+  select(`What is your manager's level of expertise in data analysis?` , 
+         `"My manager gives me realistic assignments that are relevant to my skills and responsibilities, with a clear and specific description of the requirements.":To what extend do you associate the following phrase with your manager?..` ) %>% 
+  setNames(c("expertise", "satisfaction")) %>% 
+  mutate(expertise = as.double(as.integer(expertise)),
+         satisfaction = as.double((satisfaction))) %>% filter(!is.na(satisfaction)) 
+ggplot(manager, aes(expertise, satisfaction)) + geom_jitter(size = 0.5) + geom_smooth(method="lm") + theme_bw() + 
+  theme(legend.position = 'bottom', 
+        axis.text = element_text(size=15),
+        axis.title  = element_text(size=15), legend.title = element_blank()) 
+
+
+
+
+```
+
+## Спасибо за внимание
+
+Инфографики:
+
+- [Data Science в России](https://www.jetbrains.com/research/data-science-in-russia/)  
+   jb.gg/ds-russia
+- [Data Science survey 2018](https://www.jetbrains.com/research/data-science-2018/)  
+   jetbrains.com/research/data-science-2018/
+
+
